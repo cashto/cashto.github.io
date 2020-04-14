@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+
+<style>
+    TD { font: 10pt Verdana }
+</style>
+
+<table>
+<tr valign=top>
+<td>
+    <textarea id=output readonly style="width: 400px" rows=15 wrap=off></textarea>
+    <p><input id=input type=text" style="width:400px" onkeypress="onKeyPress()">
+    <p><input type=button value="Step" onclick="output.value=''; step(); show(0);">
+    <input type=button value="Run" onclick="stop = false; setTimeout('run()',0)">
+    <input type=button value="Stop" onclick="stop = true;">
+    <div style="background-color: #CCCCFF; border: 1px solid grey; padding: 5px">
+    <b>Iter:</b> <span id=dbgIter></span>
+    <br><b>Pct complete:</b> <span id=dbgPct></span>
+    <br><b>Time:</b> <span id=dbgTime></span>
+    <br><b>Dna:</b> <span id=dbgDna></span>
+    <br><b>Rna:</b> <span id=dbgRna></span>
+    <br><b>Bitmaps:</b> <span id=dbgBitmaps></span>
+    <p><div id=dbgColor style="border: 1px solid black; width: 100px; height: 30px;"></div>
+    <br><div id=dbgAlpha style="border: 1px solid black; width: 100px; height: 30px;"></div>
+    </div>
+</td>
+<td>
+    <img id=img width=600 height=600 style="border: 1px solid black;">
+    <canvas id=canvas width=600 height=600 style="border: 1px solid green; display: none"></canvas>
+</td>
+</tr>
+</table>
+
+<script src="icfp.js"></script>
+
+<script>
+function write(x) {
+    output.value += x.toString();
+}
+
+function writeLn(x) {
+    if (typeof(x) !== "undefined") { 
+        write(x);
+    }
+    write("\n");
+    output.scrollTop = output.scrollHeight - output.clientHeight;
+}
+
+function onKeyPress() {
+    if (window.event.keyCode === 13) {
+        exec(input.value);
+        input.value = "";
+    }
+}
+
+function exec(command) {
+    writeLn(">" + input.value);
+    var ans;
+    try { ans = eval(input.value); } catch (e) { ans = e.toString(); };
+    if (typeof(ans) !== "undefined") {
+        writeLn(ans);
+    }
+}
+
+function cls() {
+    output.value = "";
+}
+
+function dump(object) {
+    return JSON.stringify(object, null, 3);
+}
+
+function loadJson(filename) {
+    persist = {};
+    var fso = new ActiveXObject("Scripting.FileSystemObject");
+    var filePath = fso.GetSpecialFolder(2) + "\\" + filename;
+    if (fso.FileExists(filePath)) {
+        var file = fso.OpenTextFile(filePath, 1, false, -1);
+        var x = JSON.parse(file.ReadAll());
+        file.Close();
+    }
+    return x;
+}
+
+function saveJson(filename, x) {
+    var fso = new ActiveXObject("Scripting.FileSystemObject");
+    var filePath = fso.GetSpecialFolder(2) + "\\" + filename;
+    var file = fso.CreateTextFile(filePath, true, true);
+    file.Write(JSON.stringify(x));
+    file.Close();
+}
+
+function savep() {
+    saveJson("persist.json", persist);
+}
+
+//persist = loadJson("persist.json");
+//window.onbeforeunload = savep;
+
+/*************************************************************/
+
+function loadDna()
+{
+    var http = new XMLHttpRequest();
+    http.open("GET", "http://dl.dropbox.com/u/31272201/endo.dna", false);
+    http.send();
+    return new Dna(http.responseText);
+}
+
+function writePattern(pattern) {
+    for (var i = 0; i < pattern.length; ++i) {
+        if (typeof(pattern[i]) === "object") {
+            write(pattern[i].name + "[" + pattern[i].value + "]");
+        } else {
+            write(pattern[i]);
+        }
+    }
+    writeLn();
+}
+
+function step() {
+    if (iter === 0) {
+        startTime = (new Date()).getTime();
+    }
+    
+    ++iter;
+    try {
+        var pattern = dna.pattern();
+        var template = dna.template();
+        dna = dna.matchreplace(pattern, template);
+    } catch (e) {
+        stop = true;
+        writeLn("exception: " + e);
+    }
+}
+
+function update() {
+    var percentComplete = Math.round(iter / 1891886 * 1000) / 10;
+    var elapsedTimeMillisec = (new Date()).getTime() - startTime;
+    var timeRemainingMillisec = (100 - percentComplete) / percentComplete * elapsedTimeMillisec;
+
+    dbgIter.innerHTML = iter;
+    dbgPct.innerHTML = percentComplete + "%";
+    dbgTime.innerHTML = 
+        Math.floor(elapsedTimeMillisec / 1000) + "s so far + " +
+        Math.floor(timeRemainingMillisec / 1000) + "s remaining = " +
+        Math.floor((timeRemainingMillisec + elapsedTimeMillisec) / 1000) + "s total.";
+    dbgDna.innerHTML = "dna: " + dna.debugStr();
+    dbgRna.innerHTML = "rna: " + rna.length;
+    dbgColor.style.backgroundColor = rnaBuilder.currentPixel() % 0x1000000;
+    var alpha = Math.floor(rnaBuilder.currentPixel() / 0x1000000);
+    dbgAlpha.style.backgroundColor = alpha * 0x010101;
+    dbgBitmaps.innerHTML = rnaBuilder.bitmaps.length;
+}
+
+function show(item) {
+    update();
+    for (var i = lastRna; i < rna.length; ++i) {
+        rnaBuilder.build(rna[i]);
+    }
+    lastRna = rna.length;
+    rnaBuilder.bitmaps[Math.min(item, rnaBuilder.bitmaps.length - 1)].draw(canvas.getContext("2d"));
+    img.src = canvas.toDataURL();
+}
+
+function run() {
+    for (var i = 0; i < 1000 && !stop; ++i) {
+        step();
+    }
+    update();
+    if (!stop) {
+        setTimeout("run()", 0);
+    }
+}
+
+function loadTest() {
+    load("IIPIFFCPICICIICPIICIPPPICIIC");
+}
+
+ui = {
+    "emitRna": function(x) { rna.push(x); },
+    "debug": function(x) { /* writeLn("DBG>" + rna + " " + x); */ }
+};
+
+function load(x) {
+    startTime = 0;
+    rnaBuilder = new RnaBuilder();
+    rna = [];
+    lastRna = 0;
+    iter = 0;
+    var basedna = loadDna();
+    dna = new Dna(x);
+    dna.appendReference(basedna.head, basedna.end());
+    show(0);
+}
+</script>
