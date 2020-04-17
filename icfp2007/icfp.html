@@ -101,7 +101,7 @@ function savep() {
 function loadDna()
 {
     var http = new XMLHttpRequest();
-    http.open("GET", "http://dl.dropbox.com/u/31272201/endo.dna", false);
+    http.open("GET", "http://cashto.github.io/icfp2007/endo.dna", false);
     http.send();
     return new Dna(http.responseText);
 }
